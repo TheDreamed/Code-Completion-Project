@@ -1,0 +1,29 @@
+# ---- Python artefacts ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# ---- Virtual-envs ----
+venv/
+.env/
+.venv/
+.python-version
+
+# ---- IDE / editor settings ----
+.vscode/
+.idea/
+*.swp
+*.sublime-project
+*.sublime-workspace
+
+# ---- Logs & misc ----
+*.log
+*.tmp
+.DS_Store
+
+# ---- Secrets / keys ----
+apikey            # your plaintext key file
+*.env             # dotenv-style secrets

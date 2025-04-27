@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Code Autocomplete with Ghost Text</title>
+  <!-- Load Monaco Editor AMD from a CDN (version can vary) -->
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.34.0/min/vs/loader.js"></script>
+
+  <style>
+    /* Ghost text styling */
+    .ghost-text {
+      opacity: 0.4;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <h1>Monaco Editor: Auto Suggest with Ghost Text</h1>
+  <div id="editor" style="width:80vw; height:80vh; border:1px solid #ccc;"></div>
+
+  <script>
+    // Configure Monaco to load from the JSDelivr path
+    require.config({
+      paths: {
+        'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.34.0/min/vs'
+      }
+    });
+
+    require(["vs/editor/editor.main"], function() {
+
+      // 1) Create the Monaco Editor
+      const editor = monaco.editor.create(document.getElementById('editor'), {
+        value: `# Start typing Python code here...\n\ndef hello_world():\n    print("Hello!")\n`,
+        language: "python",
+        theme: "vs-light",
+        automaticLayout: true
+      });
+
+      // Track the current ghost suggestion, its position, and the decoration ID
+      let currentSuggestion = "";
+      let currentPosition = null;
+      let decorationIds = [];
+
+      // Helper to show or clear a ghost-text decoration
+      function showSuggestion(suggestion) {
+        // Clear any old decorations
+        decorationIds = editor.deltaDecorations(decorationIds, []);
+
+        if (!suggestion) {
+          // If no suggestion provided, clear references
+          currentSuggestion = "";
+          currentPosition = null;
+          return;
+        }
+
+        currentSuggestion = suggestion;
+        // We'll place the ghost text at the *current* cursor position
+        currentPosition = editor.getPosition();
+
+        // Create a new decoration that displays the suggestion inline
+        decorationIds = editor.deltaDecorations([], [
+          {
+            range: new monaco.Range(
+              currentPosition.lineNumber,
+              currentPosition.column,
+              currentPosition.lineNumber,
+              currentPosition.column
+            ),
+            options: {
+              after: {
+                content: suggestion,
+                inlineClassName: 'ghost-text'
+              }
+            }
+          }
+        ]);
+      }
+
+      // 2) Handle Tab to accept the suggestion
+      editor.onKeyDown((e) => {
+        if (e.code === "Tab") {
+          if (currentSuggestion && currentPosition) {
+            // Prevent normal Tab, insert the suggestion text
+            e.preventDefault();
+            editor.executeEdits("accept-suggestion", [
+              {
+                range: new monaco.Range(
+                  currentPosition.lineNumber,
+                  currentPosition.column,
+                  currentPosition.lineNumber,
+                  currentPosition.column
+                ),
+                text: currentSuggestion
+              }
+            ]);
+            // Clear the suggestion after we insert it
+            showSuggestion("");
+          }
+        } else if (
+          // If user presses a key that changes text (not an arrow), remove ghost text
+          e.code !== "ArrowLeft" &&
+          e.code !== "ArrowRight" &&
+          e.code !== "ArrowUp" &&
+          e.code !== "ArrowDown"
+        ) {
+          showSuggestion("");
+        }
+      });
+
+      // 3) Idle timer logic for fetching new suggestions
+      let idleTimer = null;
+
+      // Whenever the editor content changes, reset the 3-second timer
+      editor.onDidChangeModelContent(() => {
+        // Clear any existing suggestion while typing
+        showSuggestion("");
+
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+        }
+        // 3-second idle timeout
+        idleTimer = setTimeout(async () => {
+          // 3s have passed since the last keystroke
+          const snippet = editor.getValue();
+          try {
+            const response = await fetch("/autocomplete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ snippet })
+            });
+            const data = await response.json();
+            const suggestion = data.suggestion || "";
+
+            // Show the suggestion as ghost text, not inserted yet
+            showSuggestion(suggestion);
+
+          } catch (err) {
+            console.error("Autocomplete error:", err);
+          }
+        }, 3000);
+      });
+
+    });
+  </script>
+</body>
+</html>
