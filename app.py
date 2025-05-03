@@ -1,70 +1,68 @@
+import os
+import logging
+from flask import Flask, request, jsonify, render_template, make_response
 import anthropic
-from flask import Flask, request, jsonify, render_template
+from dotenv import load_dotenv
+
+###############################################################################
+# Configuration
+###############################################################################
+
+load_dotenv()  # reads .env in current working directory
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY")
+if not API_KEY:
+    raise RuntimeError("Set ANTHROPIC_API_KEY in .env or your shell.")
+
+client = anthropic.Anthropic(api_key=API_KEY)
 
 app = Flask(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
-# Replace with your real Anthropic API key
-client = anthropic.Anthropic(api_key="")
+###############################################################################
+# Anthropic helpers
+###############################################################################
 
-def block_to_text(block) -> str:
-    """
-    Gracefully handle either a dict-based block or an object with .text.
-    """
-    # Case 1: Possibly a dict (older style)
-    if isinstance(block, dict):
-        # If it’s a text-type block, return block["text"]
-        if block.get("type") == "text":
-            return block.get("text", "")
-        return ""
+def _block_to_text(block) -> str:
+    if isinstance(block, dict) and block.get("type") == "text":
+        return block.get("text", "")
+    return getattr(block, "text", "") or ""
 
-    # Case 2: Possibly an object with .text
-    text_attr = getattr(block, "text", "")
-    if not text_attr:
-        return ""
-    return text_attr
-
-def join_anthropic_content(content) -> str:
-    """
-    content may be a string or a list of block objects/dicts.
-    Collect any text we find.
-    """
+def _join_content(content) -> str:
     if isinstance(content, str):
-        return content  # just a plain string
-
+        return content
     if isinstance(content, list):
-        parts = []
-        for block in content:
-            parts.append(block_to_text(block))
-        return "".join(parts)
+        return "".join(_block_to_text(b) for b in content)
+    return ""
 
-    return ""  # fallback if unexpected
-
-def generate_completion_anthropic(snippet: str, max_tokens: int = 10) -> str:
+def next_tokens(code: str, *, max_tokens: int = 12) -> str:
     """
-    Ask Anthropic for only the minimal next snippet of code.
-    The refined prompt ensures no explanation is provided.
+    Ask Claude for the next few tokens — no explanations, no duplicates.
     """
-    model_name = "claude-3-7-sonnet-20250219"  # or "claude-2", "claude-instant-1", etc.
     try:
-        response = client.messages.create(
-            model=model_name,
-            # The refined system instructions:
+        resp = client.messages.create(
+            model="claude-3-7-sonnet-20250219",
             system=(
-                "You are an advanced Python coding assistant. The user is writing code and you need to predict what line of code or characters of code he will write next based on the code's context. "
-                "You should ONLY respond with the next few tokens of code that naturally "
-                "continue from the snippet. Absolutely no explanations, comments, or repeated code. "
-                "Keep it minimal and just provide the next chunk of code to continue the snippet."
+                "You are an advanced Python coding assistant. "
+                "Return ONLY the next code tokens that naturally follow the snippet. "
+                "Do not explain."
             ),
-            messages=[{"role": "user", "content": snippet}],
-            max_tokens=max_tokens,  # e.g., 10 tokens to keep the snippet short
+            messages=[{"role": "user", "content": code}],
+            max_tokens=max_tokens,
             temperature=0.1,
-            stop_sequences=[]
+            stop_sequences=[],
         )
-        short_snippet = join_anthropic_content(response.content)
-        return short_snippet.strip()
-    except Exception as e:
-        print("Error generating completion:", str(e))
+        return _join_content(resp.content).strip()
+    except Exception as exc:
+        app.logger.exception("Anthropic error: %s", exc)
         return ""
+
+###############################################################################
+# Routes
+###############################################################################
 
 @app.route("/")
 def index():
@@ -72,10 +70,15 @@ def index():
 
 @app.route("/autocomplete", methods=["POST"])
 def autocomplete():
-    data = request.get_json()
-    snippet = data.get("snippet", "")
-    suggestion = generate_completion_anthropic(snippet, max_tokens=10)
-    return jsonify({"suggestion": suggestion})
+    snippet = request.json.get("snippet", "")
+    suggestion = next_tokens(snippet)
+    resp = make_response(jsonify({"suggestion": suggestion}))
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+###############################################################################
+# Entrypoint
+###############################################################################
 
 if __name__ == "__main__":
-    app.run(debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)

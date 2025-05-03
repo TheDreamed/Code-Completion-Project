@@ -1,145 +1,106 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <title>Code Autocomplete with Ghost Text</title>
-  <!-- Load Monaco Editor AMD from a CDN (version can vary) -->
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.34.0/min/vs/loader.js"></script>
+  <meta charset="UTF-8" />
+  <title>Monaco Copilot-Style Autocomplete (Inline Provider)</title>
+
+  <!--  ⚠️  Use Monaco >= 0.33 for the inline-completion API  -->
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 
   <style>
-    /* Ghost text styling */
-    .ghost-text {
-      opacity: 0.4;
-      font-style: italic;
-    }
+    :root { font-family: system-ui, sans-serif; }
+    body   { margin: 0; display: flex; flex-direction: column; height: 100vh; }
+    #bar   { padding: .5rem 1rem; background: #f0f0f0; border-bottom: 1px solid #ccc;
+             display: flex; align-items: center; gap: 1rem; }
+    #editor{ flex: 1 1 auto; }
   </style>
 </head>
+
 <body>
-  <h1>Monaco Editor: Auto Suggest with Ghost Text</h1>
-  <div id="editor" style="width:80vw; height:80vh; border:1px solid #ccc;"></div>
+  <div id="bar">
+    <strong>Monaco Copilot Clone (Inline API)</strong>
+    <button id="theme-btn">Toggle Theme (Ctrl+J)</button>
+  </div>
+  <div id="editor"></div>
 
   <script>
-    // Configure Monaco to load from the JSDelivr path
+    /* ────────────────────────────────────────────────────────────── *
+     * 1.  Bootstrap Monaco
+     * ────────────────────────────────────────────────────────────── */
     require.config({
-      paths: {
-        'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.34.0/min/vs'
-      }
+      paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' }
     });
 
-    require(["vs/editor/editor.main"], function() {
-
-      // 1) Create the Monaco Editor
+    require(['vs/editor/editor.main'], () => {
       const editor = monaco.editor.create(document.getElementById('editor'), {
-        value: `# Start typing Python code here...\n\ndef hello_world():\n    print("Hello!")\n`,
-        language: "python",
-        theme: "vs-light",
-        automaticLayout: true
+        value: [
+          '# Start typing Python…',
+          '',
+          'def hello_world():',
+          '    print("Hello World!")',
+          ''
+        ].join('\n'),
+        language: 'python',
+        automaticLayout: true,
+        fontSize: 14,
+        minimap: { enabled: false }
       });
 
-      // Track the current ghost suggestion, its position, and the decoration ID
-      let currentSuggestion = "";
-      let currentPosition = null;
-      let decorationIds = [];
+      /* ─────────────────────────────────────────────────────────── *
+       * 2.  Inline-completion provider  (Copilot-style ghost text)
+       * ─────────────────────────────────────────────────────────── */
+      monaco.languages.registerInlineCompletionsProvider('python', {
+        async provideInlineCompletions(model, position, context, token) {
+          /* Grab code up to the caret */
+          const prefix = model.getValueInRange({
+            startLineNumber: 1, startColumn: 1,
+            endLineNumber  : position.lineNumber,
+            endColumn      : position.column
+          });
 
-      // Helper to show or clear a ghost-text decoration
-      function showSuggestion(suggestion) {
-        // Clear any old decorations
-        decorationIds = editor.deltaDecorations(decorationIds, []);
-
-        if (!suggestion) {
-          // If no suggestion provided, clear references
-          currentSuggestion = "";
-          currentPosition = null;
-          return;
-        }
-
-        currentSuggestion = suggestion;
-        // We'll place the ghost text at the *current* cursor position
-        currentPosition = editor.getPosition();
-
-        // Create a new decoration that displays the suggestion inline
-        decorationIds = editor.deltaDecorations([], [
-          {
-            range: new monaco.Range(
-              currentPosition.lineNumber,
-              currentPosition.column,
-              currentPosition.lineNumber,
-              currentPosition.column
-            ),
-            options: {
-              after: {
-                content: suggestion,
-                inlineClassName: 'ghost-text'
-              }
-            }
-          }
-        ]);
-      }
-
-      // 2) Handle Tab to accept the suggestion
-      editor.onKeyDown((e) => {
-        if (e.code === "Tab") {
-          if (currentSuggestion && currentPosition) {
-            // Prevent normal Tab, insert the suggestion text
-            e.preventDefault();
-            editor.executeEdits("accept-suggestion", [
-              {
-                range: new monaco.Range(
-                  currentPosition.lineNumber,
-                  currentPosition.column,
-                  currentPosition.lineNumber,
-                  currentPosition.column
-                ),
-                text: currentSuggestion
-              }
-            ]);
-            // Clear the suggestion after we insert it
-            showSuggestion("");
-          }
-        } else if (
-          // If user presses a key that changes text (not an arrow), remove ghost text
-          e.code !== "ArrowLeft" &&
-          e.code !== "ArrowRight" &&
-          e.code !== "ArrowUp" &&
-          e.code !== "ArrowDown"
-        ) {
-          showSuggestion("");
-        }
-      });
-
-      // 3) Idle timer logic for fetching new suggestions
-      let idleTimer = null;
-
-      // Whenever the editor content changes, reset the 3-second timer
-      editor.onDidChangeModelContent(() => {
-        // Clear any existing suggestion while typing
-        showSuggestion("");
-
-        if (idleTimer) {
-          clearTimeout(idleTimer);
-        }
-        // 3-second idle timeout
-        idleTimer = setTimeout(async () => {
-          // 3s have passed since the last keystroke
-          const snippet = editor.getValue();
+          /* Call your backend LLM endpoint */
+          let suggestionText = '';
           try {
-            const response = await fetch("/autocomplete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ snippet })
+            const res = await fetch('/autocomplete', {
+              method : 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body   : JSON.stringify({ snippet: prefix })
             });
-            const data = await response.json();
-            const suggestion = data.suggestion || "";
-
-            // Show the suggestion as ghost text, not inserted yet
-            showSuggestion(suggestion);
-
+            const { suggestion = '' } = await res.json();
+            suggestionText = suggestion.replace(/^[\s\n]+/, '');
           } catch (err) {
-            console.error("Autocomplete error:", err);
+            console.error('autocomplete error', err);
           }
-        }, 3000);
+
+          if (!suggestionText || token.isCancellationRequested) {
+            return { items: [], dispose() {} };
+          }
+
+          /* Monaco shows this faded; Tab / → accept, Esc dismiss */
+          return {
+            items: [{
+              insertText: suggestionText,
+              range: new monaco.Range(position.lineNumber, position.column,
+                                      position.lineNumber, position.column),
+              command: { id: 'acceptInlineSuggestion' }      // built-in
+            }],
+            dispose() {}
+          };
+        },
+        handleItemDidShow() {},
+        freeInlineCompletions() {}   // required empty stub
       });
 
+      /* ─────────────────────────────────────────────────────────── *
+       * 3.  Optional extras
+       * ─────────────────────────────────────────────────────────── */
+      /* Theme toggle */
+      function toggleTheme() {
+        const current = editor._themeService._theme.themeName;
+        monaco.editor.setTheme(current === 'vs-dark' ? 'vs' : 'vs-dark');
+      }
+      document.getElementById('theme-btn').onclick = toggleTheme;
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyJ, toggleTheme);
     });
   </script>
 </body>
