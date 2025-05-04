@@ -2,7 +2,7 @@ import os, random, ast, logging, time
 from flask import Flask, request, jsonify, render_template, make_response
 import anthropic
 from dotenv import load_dotenv
-from anthropic import RateLimitError           # ←  NEW
+from anthropic import RateLimitError     # for graceful handling
 
 ###############################################################################
 # Configuration
@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 ###############################################################################
-# Anthropic helpers (unchanged)
+# Anthropic helpers
 ###############################################################################
 def _block_to_text(b) -> str:
     if isinstance(b, dict) and b.get("type") == "text":
@@ -32,80 +32,13 @@ def _join_content(content) -> str:
         return "".join(_block_to_text(b) for b in content)
     return ""
 
-# ────────────────────────────────────────────────────────────────────────────
-# 1. MINI‑GA ADD‑ON  (pop ≤ 5, 1 generation)
-# ────────────────────────────────────────────────────────────────────────────
-def _is_valid_python(txt: str) -> bool:
-    try:
-        ast.parse(txt, mode="exec")
-        return True
-    except SyntaxError:
-        return False
-
-def _fitness(candidate: str, need_space: bool) -> float:
-    if not candidate:                                   # empty → worst
-        return 0
-    if need_space and not candidate.startswith((" ", "\n")):
-        return 0                                        # violates spacing rule
-    score = 1 if _is_valid_python(candidate) else 0     # syntax bonus
-    score += max(0, 8 - len(candidate))                 # brevity bonus
-    return score
-
-def _sample_completion(prefix: str,
-                       temperature: float,
-                       max_tokens: int = 16) -> str:
-    """Single call to Claude; returns '' on rate‑limit errors."""
-    try:
-        resp = client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            system=SYSTEM_PROMPT,        # ← keeps your prompt intact
-            messages=[{"role": "user", "content": prefix}],
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stop_sequences=[]
-        )
-        return _join_content(resp.content).rstrip('\n')
-    except RateLimitError:
-        time.sleep(0.3)                  # brief back‑off, then skip
-        return ""
-    except Exception as exc:
-        app.logger.exception("Anthropic error during sampling: %s", exc)
-        return ""
-
-def ga_best_completion(prefix: str,
-                       pop_size: int = 5,
-                       base_temp: float = 0.7,
-                       sigma: float = 0.2):
-    need_space = not prefix.endswith(("\n", " ", "\t"))
-
-    def legal_temp():
-        return min(1.0, max(0.1, random.gauss(base_temp, sigma)))
-
-    # Initial samples
-    population = [_sample_completion(prefix, legal_temp()) for _ in range(pop_size)]
-
-    # ► NEW: filter out rate‑limited blanks; if all blank, just return ''
-    population = [c for c in population if c]
-    if not population:
-        return ""
-
-    ranked = sorted(population, key=lambda c: _fitness(c, need_space), reverse=True)
-
-    # ► NEW: if top fitness is 0, still return the first non‑empty candidate
-    best = ranked[0]
-    if _fitness(best, need_space) == 0:
-        return best
-    app.logger.debug("GA picked: %r", best) 
-    return best
-
-
-
 ###############################################################################
-# Original SYSTEM_PROMPT, next_tokens, apply_edit …  unchanged
+# Prompt (UNCHANGED)
 ###############################################################################
 SYSTEM_PROMPT = """
 You are an advanced *Python* coding‑assistant that returns **only** the next code
-tokens that naturally follow the user‑supplied snippet.
+tokens that naturally follow the user‑supplied snippet. DO NOT REPEAT THE CODE
+ALREADY SUPPLIED. You are not allowed to add any comments, explanations, or anything except the code itself.
 
 ✦ General rules
 • Output raw code *exactly* as it should be inserted—no wrapping in markdown,
@@ -119,45 +52,109 @@ tokens that naturally follow the user‑supplied snippet.
 • If the continuation starts **on a new line**, start with a newline followed
   by the correct indentation (spaces) for that scope.
 • Preserve Python indentation levels exactly; do not trim leading spaces.
-
-Samples of bad suggestion based on the current code:
-Current code:
-class Solution(object):
-    def twoSum(self, nums, target):
-    
-        prevMap = {} # val : index
-
-        for i, n in enumerate(nums):
-            diff = target -n
-            if diff in prevMap:
-                return[prevMap[diff], i]
-            prevMap[n] = i
-
-Code Suggestion:
-return[] (the indentation is wrong here and the spacing is incorrect too. This should be printed below the previous line)
 """
-   # (same block you provided)
 
-def next_tokens(code:str, *, max_tokens:int=12) -> str:
+###############################################################################
+# Mini‑Genetic‑Algorithm for picking best completion (≤ 5 calls)
+###############################################################################
+def _is_valid_python(txt: str) -> bool:
+    try:
+        ast.parse(txt, mode="exec")
+        return True
+    except SyntaxError:
+        return False
+
+def _fitness(candidate: str, need_space: bool) -> float:
+    if not candidate:
+        return 0
+    if need_space and not candidate.startswith((" ", "\n")):
+        return 0
+    score = 1 if _is_valid_python(candidate) else 0
+    score += max(0, 8 - len(candidate))           # shorter is better
+    return score
+
+def _sample_completion(prefix: str, temperature: float, max_tokens: int = 16) -> str:
     try:
         resp = client.messages.create(
             model="claude-3-7-sonnet-20250219",
             system=SYSTEM_PROMPT,
-            messages=[{"role":"user","content":code}],
+            messages=[{"role": "user", "content": prefix}],
             max_tokens=max_tokens,
-            temperature=0.1,
+            temperature=temperature,
             stop_sequences=[]
         )
-        return _join_content(resp.content).rstrip('\n')
+        return _join_content(resp.content).rstrip("\n")
+    except RateLimitError:
+        app.logger.warning("Rate‑limited sample — returning empty string")
+        time.sleep(0.3)
+        return ""
     except Exception as exc:
-        app.logger.exception("Anthropic error: %s", exc)
+        app.logger.exception("Anthropic error during sampling: %s", exc)
         return ""
 
-def apply_edit(code:str, instruction:str) -> tuple[str,str]:
-    ...  # (unchanged)
+def ga_best_completion(prefix: str,
+                       pop_size: int = 5,
+                       base_temp: float = 0.4,
+                       sigma: float = 0.2) -> str:
+    need_space = not prefix.endswith(("\n", " ", "\t"))
+
+    def legal_temp():
+        return min(1.0, max(0.1, random.gauss(base_temp, sigma)))
+
+    population = [_sample_completion(prefix, legal_temp()) for _ in range(pop_size)]
+    population = [c for c in population if c]          # drop blanks
+    if not population:
+        return ""
+
+    ranked = sorted(population,
+                    key=lambda c: _fitness(c, need_space),
+                    reverse=True)
+    best = ranked[0]
+    if _fitness(best, need_space) == 0:
+        return best
+    return best
 
 ###############################################################################
-# Routes (only /autocomplete modified)
+# Chat‑level edit helper (with graceful error / rate‑limit handling)
+###############################################################################
+def apply_edit(code: str, instruction: str) -> tuple[str, str]:
+    try:
+        resp = client.messages.create(
+            model="claude-3-7-sonnet-20250219",
+            system=(
+                "You are an AI pair‑programmer. "
+                "The user will send the current code and a request. "
+                "Respond with the FULL REVISED file that satisfies the request. "
+                "After the code, append a brief explanation prefixed with >>> "
+                "(one short paragraph)."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"### Current code:\n```python\n{code}\n```\n\n"
+                    f"### Request:\n{instruction}\n"
+                )
+            }],
+            max_tokens=4096,
+            temperature=0
+        )
+        raw = _join_content(resp.content)
+        if "```" in raw:
+            parts = raw.split("```")
+            new_code = parts[1] if len(parts) > 1 else code
+            explanation = "".join(parts[2:]).lstrip(">\n ")
+        else:
+            new_code = raw
+            explanation = ""
+        return new_code, explanation or "Done."
+    except RateLimitError:
+        return code, "⚠️  Claude is rate‑limited right now – please try again."
+    except Exception as exc:
+        app.logger.exception("Anthropic error during edit: %s", exc)
+        return code, f"❌ Server error: {type(exc).__name__}"
+
+###############################################################################
+# Routes
 ###############################################################################
 @app.route("/")
 def index():
@@ -166,7 +163,7 @@ def index():
 @app.post("/autocomplete")
 def autocomplete():
     snippet = request.json.get("snippet", "")
-    suggestion = ga_best_completion(snippet)      # ←  now GA‑powered
+    suggestion = ga_best_completion(snippet)
     resp = make_response(jsonify({"suggestion": suggestion}))
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp

@@ -2,151 +2,126 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Monaco Copilot Clone — Dark Mode</title>
+  <title>Coding Genie — Copilot‑style IDE</title>
 
-  <!-- Monaco ≥ 0.33 supports inline‑completion -->
+  <!-- Monaco Editor -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 
   <style>
     :root {
       font-family: system-ui, sans-serif;
-      --bg-0: #1e1e1e;      /* VS Code editor bg */
-      --bg-1: #252526;      /* activity bar / side bar */
-      --bg-2: #2d2d2d;      /* chat bubbles */
-      --fg-0: #d4d4d4;      /* base text */
-      --accent: #0db9d7;    /* cyan accent */
+      --bg0:#1e1e1e; --bg1:#252526; --bg2:#2d2d2d;
+      --fg:#d4d4d4; --acc:#0db9d7;
     }
-    body  { margin:0; display:flex; flex-direction:column; height:100vh;
-            background:var(--bg-0); color:var(--fg-0); }
-
-    /* top bar ----------------------------------------------------- */
-    #bar  { padding:.5rem 1rem; background:var(--bg-1); border-bottom:1px solid #000;
-            display:flex; align-items:center; gap:1rem; }
-
-    #bar button { background:none; color:var(--accent); border:1px solid var(--accent);
-                  padding:.25rem .5rem; border-radius:4px; cursor:pointer; }
-
-    /* split‑pane workspace --------------------------------------- */
-    #work { flex:1 1 auto; display:flex; min-height:0; }
-    #editor { flex:1 1 70%; min-width:0; }
-    #chat   { flex:0 0 30%; border-left:1px solid #000;
-              display:flex; flex-direction:column; background:var(--bg-1); }
-
-    /* chat pane --------------------------------------------------- */
-    #msgs { flex:1 1 auto; overflow-y:auto; padding:1rem;
-            display:flex; flex-direction:column; gap:.75rem; }
-    .msg  { white-space:pre-wrap; line-height:1.4; padding:.5rem .75rem; border-radius:.75rem; }
-    .user { align-self:flex-end; background:var(--accent); color:#fff; }
-    .bot  { align-self:flex-start; background:var(--bg-2); }
-
-    #send { display:flex; gap:.5rem; padding:.75rem; border-top:1px solid #000; }
-    #prompt { flex:1 1 auto; padding:.5rem; background:var(--bg-0); color:var(--fg-0);
-              border:1px solid #555; border-radius:4px; }
-    button { cursor:pointer; }
+    body {margin:0;display:flex;flex-direction:column;height:100vh;background:var(--bg0);color:var(--fg);}
+    /* ─── Top bar ───────────────────────────── */
+    #bar {padding:.5rem 1rem;background:var(--bg1);border-bottom:1px solid #000;
+          display:flex;align-items:center;gap:1rem}
+    #bar img {height:24px;vertical-align:middle;filter:drop-shadow(0 0 2px #0008);}
+    #bar button{background:none;color:var(--acc);border:1px solid var(--acc);
+                padding:.25rem .5rem;border-radius:4px;cursor:pointer}
+    /* ─── Workspace split ───────────────────── */
+    #work{flex:1;display:flex;min-height:0}
+    #editor{flex:1 1 70%;min-width:0}
+    #chat{flex:0 0 30%;display:flex;flex-direction:column;background:var(--bg1);border-left:1px solid #000}
+    /* ─── Chat pane ─────────────────────────── */
+    #msgs{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.75rem}
+    .msg{white-space:pre-wrap;line-height:1.4;padding:.5rem .75rem;border-radius:.75rem}
+    .user{align-self:flex-end;background:var(--acc);color:#fff}
+    .bot{align-self:flex-start;background:var(--bg2)}
+    #send{display:flex;gap:.5rem;padding:.75rem;border-top:1px solid #000}
+    #prompt{flex:1;padding:.5rem;background:var(--bg0);color:var(--fg);border:1px solid #555;border-radius:4px}
+    button{cursor:pointer}
   </style>
 </head>
-
 <body>
+  <!-- Top Bar with Logo -->
   <div id="bar">
-    <strong style="color:var(--accent)">Monaco Copilot Clone</strong>
-    <button id="theme-btn">Toggle Theme (Ctrl + J)</button>
+    <img src="/static/CodeGenie.png" alt="Coding Genie logo" />
+    <strong style="color:var(--acc);font-weight:600">Coding&nbsp;Genie</strong>
+    <button id="theme-btn">Toggle Theme (Ctrl+J)</button>
   </div>
 
+  <!-- Editor + Chat -->
   <div id="work">
     <div id="editor"></div>
 
     <div id="chat">
       <div id="msgs"></div>
       <form id="send">
-        <input id="prompt" autocomplete="off"
-               placeholder="Ask the AI to modify the code…" />
+        <input id="prompt" autocomplete="off" placeholder="Ask the Genie to alter your code…" />
         <button type="submit">Send</button>
       </form>
     </div>
   </div>
 
   <script>
-    /* ── 1. bootstrap monaco (default = vs‑dark) ────────────────── */
-    require.config({ paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'} });
-    require(['vs/editor/editor.main'], () => {
+    /* ───────────────────── Bootstrap Monaco ───────────────────── */
+    require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'}});
+    require(['vs/editor/editor.main'],()=>{
 
-      const editor = monaco.editor.create(document.getElementById('editor'), {
-        value: '# Start typing Python…\n\n',
-        language: 'python',
-        theme: 'vs-dark',                      // ← default dark
-        automaticLayout: true,
-        fontSize: 14,
-        minimap: { enabled:false }
+      const editor = monaco.editor.create(document.getElementById('editor'),{
+        value:'# Start typing Python…\n\n',
+        language:'python',
+        theme:'vs-dark',
+        automaticLayout:true,
+        fontSize:14,
+        minimap:{enabled:false},
+        quickSuggestions:{other:true},
+        inlineSuggest:{enabled:true}
       });
 
-      /* ── 2. inline‑completion provider (unchanged) ───────────── */
-      monaco.languages.registerInlineCompletionsProvider('python', {
-        async provideInlineCompletions(model,pos,_ctx,token){
-          const prefix = model.getValueInRange({
-            startLineNumber:1,startColumn:1,endLineNumber:pos.lineNumber,endColumn:pos.column
-          });
-
-          let suggestion = '';
-          try {
-            const res = await fetch('/autocomplete',{method:'POST',
+      /* ─── Inline completion provider ─────────────────────────── */
+      monaco.languages.registerInlineCompletionsProvider('python',{
+        async provideInlineCompletions(m,pos,_c,token){
+          const prefix=m.getValueInRange({startLineNumber:1,startColumn:1,
+                                          endLineNumber:pos.lineNumber,endColumn:pos.column});
+          let s='';
+          try{
+            const r=await fetch('/autocomplete',{method:'POST',
               headers:{'Content-Type':'application/json'},
               body:JSON.stringify({snippet:prefix})});
-            ({suggestion=''} = await res.json());
-            // keep leading spaces → no .replace()
-          } catch(err){ console.error('autocomplete',err); }
+            ({suggestion:s=''}=await r.json());
+          }catch(e){console.error(e);}
+          if(!s||token.isCancellationRequested) return {items:[],dispose(){}};
+          return{
+            items:[{insertText:s,
+                    range:new monaco.Range(pos.lineNumber,pos.column,pos.lineNumber,pos.column),
+                    command:{id:'acceptInlineSuggestion'}}],
+            dispose(){}};
+        },freeInlineCompletions(){} });
 
-          if(!suggestion || token.isCancellationRequested)
-            return {items:[],dispose(){}};
-
-          return {
-            items:[{
-              insertText:suggestion,
-              range:new monaco.Range(pos.lineNumber,pos.column,pos.lineNumber,pos.column),
-              command:{id:'acceptInlineSuggestion'}
-            }],
-            dispose() {}
-          };
-        },
-        freeInlineCompletions() {}
-      });
-
-      /* ── 3. theme toggle (unchanged logic) ───────────────────── */
+      /* ─── Theme toggle ───────────────────────────────────────── */
       function toggleTheme(){
-        const now = editor._themeService._theme.themeName;
-        monaco.editor.setTheme(now==='vs-dark' ? 'vs' : 'vs-dark');
-      }
-      document.getElementById('theme-btn').onclick = toggleTheme;
-      editor.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyJ, toggleTheme);
+        const now=editor._themeService._theme.themeName;
+        monaco.editor.setTheme(now==='vs-dark'?'vs':'vs-dark');}
+      document.getElementById('theme-btn').onclick=toggleTheme;
+      editor.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyJ,toggleTheme);
 
-      /* ── 4. chat logic (unchanged) ───────────────────────────── */
+      /* ─── Chat logic (defensive JSON) ───────────────────────── */
       const msgs=document.getElementById('msgs'),
             prompt=document.getElementById('prompt'),
             form=document.getElementById('send');
 
-      const add=(txt,cls)=>{
-        const d=document.createElement('div');
-        d.className=`msg ${cls}`; d.textContent=txt;
-        msgs.appendChild(d); msgs.scrollTop=msgs.scrollHeight;
-      };
+      const add=(txt,cls)=>{const d=document.createElement('div');
+        d.className=`msg ${cls}`;d.textContent=txt;msgs.appendChild(d);
+        msgs.scrollTop=msgs.scrollHeight;};
 
       form.onsubmit=async e=>{
         e.preventDefault();
-        const q=prompt.value.trim();
-        if(!q) return;
-        add(q,'user'); prompt.value='';
-        add('…','bot'); const wait=msgs.lastChild;
-
+        const q=prompt.value.trim();if(!q)return;
+        add(q,'user');prompt.value='';add('…','bot');const wait=msgs.lastChild;
         try{
           const r=await fetch('/chat',{method:'POST',
             headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({instruction:q, code:editor.getValue()})});
-          const {code:newCode, reply}=await r.json();
-          wait.remove(); add(reply||'Done.','bot');
-          if(newCode && newCode!==editor.getValue()){
+            body:JSON.stringify({instruction:q,code:editor.getValue()})});
+          if(!r.ok){const t=await r.text();throw new Error('HTTP '+r.status+' '+t.slice(0,80));}
+          let data;try{data=await r.json();}catch{const t=await r.text();throw new Error(t.slice(0,120));}
+          const{code:newCode,reply}=data;wait.remove();add(reply||'Done.','bot');
+          if(newCode&&newCode!==editor.getValue()){
             const full=editor.getModel().getFullModelRange();
-            editor.executeEdits('chat-edit',[{range:full,text:newCode}]);
-          }
-        }catch(err){ wait.remove(); add('❌ '+err.message,'bot'); console.error(err); }
+            editor.executeEdits('chat-edit',[{range:full,text:newCode}]);}
+        }catch(err){wait.remove();add('❌ '+err.message,'bot');console.error(err);}
       };
     });
   </script>
