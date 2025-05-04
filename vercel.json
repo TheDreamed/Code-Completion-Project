@@ -1,14 +1,9 @@
 {
-  "builds": [
-    {
-      "src": "app.py",
-      "use": "@vercel/python",
-      "config": { "includeFiles": "static/**" }   // ⬅ include folder in bundle
-    }
-  ],
-  "routes": [
-    { "handle": "filesystem" },                   // ⬅ tell router to serve files first
-    { "src": "/static/(.*)", "dest": "/static/$1" },
-    { "src": "/(.*)",       "dest": "/app.py"     }
-  ]
-}
+   "builds": [
+     { "src": "app.py", "use": "@vercel/python" }
+   ],
+   "routes": [
+     { "src": "/static/(.*)", "dest": "/static/$1" },
+     { "src": "/(.*)", "dest": "/app.py" }
+   ]
+ }
