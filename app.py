@@ -33,30 +33,35 @@ def _join_content(content) -> str:
     return ""
 
 ###############################################################################
-# Prompt (UNCHANGED)
+# Prompt
 ###############################################################################
 SYSTEM_PROMPT = """
 You are an advanced *Python* coding‑assistant that returns **only** the next code
-tokens that naturally follow the user‑supplied snippet. DO NOT REPEAT THE CODE
-ALREADY SUPPLIED. You are not allowed to add any comments, explanations, docstrings or anything except the code itself. Do not include any comments like with quotations marks or even #.
+tokens that naturally follow the user‑supplied snippet.  
+DO NOT REPEAT THE CODE ALREADY SUPPLIED.  
+ABSOLUTELY NO comments, explanations, or doc‑strings (no `"""` or `'''`).  
 
-✦ General rules
-• Output raw code *exactly* as it should be inserted—no wrapping in markdown,
-  no commentary.
-• Never repeat any part of the snippet that was already provided.
-• Absolutely no explanations or apologies.
+✦ General rules  
+• Output raw code *exactly* as it should be inserted—no wrapping in markdown.  
+• Never repeat any part of the snippet that was already provided.  
+• No explanations or apologies.  
 
-✦ Whitespace rules
+✦ Whitespace rules  
 • If the continuation is **on the same line** as the cursor, **begin with a
-  single space** before the first non‑space character (e.g. "` return x`").
+  single space** before the first non‑space character (e.g. "` return x`").  
 • If the continuation starts **on a new line**, start with a newline followed
-  by the correct indentation (spaces) for that scope.
+  by the correct indentation (spaces) for that scope.  
 • Preserve Python indentation levels exactly; do not trim leading spaces.
 """
 
 ###############################################################################
 # Mini‑Genetic‑Algorithm for picking best completion (≤ 5 calls)
 ###############################################################################
+_BAD_MARKERS = ("#", '"""', "'''")
+
+def _has_bad_markers(txt: str) -> bool:
+    return any(m in txt for m in _BAD_MARKERS)
+
 def _is_valid_python(txt: str) -> bool:
     try:
         ast.parse(txt, mode="exec")
@@ -65,7 +70,7 @@ def _is_valid_python(txt: str) -> bool:
         return False
 
 def _fitness(candidate: str, need_space: bool) -> float:
-    if not candidate:
+    if not candidate or _has_bad_markers(candidate):
         return 0
     if need_space and not candidate.startswith((" ", "\n")):
         return 0
@@ -73,7 +78,8 @@ def _fitness(candidate: str, need_space: bool) -> float:
     score += max(0, 8 - len(candidate))           # shorter is better
     return score
 
-def _sample_completion(prefix: str, temperature: float, max_tokens: int = 16) -> str:
+def _sample_completion(prefix: str, temperature: float,
+                       max_tokens: int = 16) -> str:
     try:
         resp = client.messages.create(
             model="claude-3-7-sonnet-20250219",
@@ -83,7 +89,12 @@ def _sample_completion(prefix: str, temperature: float, max_tokens: int = 16) ->
             temperature=temperature,
             stop_sequences=[]
         )
-        return _join_content(resp.content).rstrip("\n")
+        raw = _join_content(resp.content).rstrip("\n")
+        # Hard‑trim anything after an illegal marker just in case
+        for m in _BAD_MARKERS:
+            if m in raw:
+                raw = raw.split(m, 1)[0].rstrip()
+        return raw
     except RateLimitError:
         app.logger.warning("Rate‑limited sample — returning empty string")
         time.sleep(0.3)
@@ -110,12 +121,10 @@ def ga_best_completion(prefix: str,
                     key=lambda c: _fitness(c, need_space),
                     reverse=True)
     best = ranked[0]
-    if _fitness(best, need_space) == 0:
-        return best
-    return best
+    return best if _fitness(best, need_space) else ""
 
 ###############################################################################
-# Chat‑level edit helper (with graceful error / rate‑limit handling)
+# Chat‑level edit helper (unchanged)
 ###############################################################################
 def apply_edit(code: str, instruction: str) -> tuple[str, str]:
     try:
