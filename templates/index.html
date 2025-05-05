@@ -13,11 +13,11 @@
       --bg0:#1e1e1e; --bg1:#252526; --bg2:#2d2d2d;
       --fg:#d4d4d4; --acc:#0db9d7;
     }
-    body {margin:0;display:flex;flex-direction:column;height:100vh;background:var(--bg0);color:var(--fg);}
+    body {margin:0;display:flex;flex-direction:column;height:100vh;background:var(--bg0);color:var(--fg);}    
     /* ─── Top bar ───────────────────────────── */
     #bar {padding:.5rem 1rem;background:var(--bg1);border-bottom:1px solid #000;
           display:flex;align-items:center;gap:1rem}
-    #bar img {height:24px;vertical-align:middle;filter:drop-shadow(0 0 2px #0008);}
+    #bar img {height:24px;vertical-align:middle;filter:drop-shadow(0 0 2px #0008);}  
     #bar button{background:none;color:var(--acc);border:1px solid var(--acc);
                 padding:.25rem .5rem;border-radius:4px;cursor:pointer}
     /* ─── Workspace split ───────────────────── */
@@ -32,14 +32,22 @@
     #send{display:flex;gap:.5rem;padding:.75rem;border-top:1px solid #000}
     #prompt{flex:1;padding:.5rem;background:var(--bg0);color:var(--fg);border:1px solid #555;border-radius:4px}
     button{cursor:pointer}
+
+    /* ─── Help modal ───────────────────────── */
+    .modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;z-index:999}
+    .modal.hidden{display:none}
+    .modal-content{background:var(--bg1);color:var(--fg);padding:2rem;border-radius:8px;max-width:480px;width:90%;box-shadow:0 0 10px #000;line-height:1.5}
+    .modal-content h2{margin-top:0;color:var(--acc)}
+    .modal-content ul{padding-left:1.25rem;margin:1rem 0}
+    .modal-content button{margin-top:1rem;border:1px solid var(--acc);background:none;color:var(--acc);padding:.5rem 1rem;border-radius:4px}
   </style>
 </head>
 <body>
   <!-- Top Bar with Logo -->
   <div id="bar">
-    <img src="public/logo.png" alt="Coding Genie logo" />
     <strong style="color:var(--acc);font-weight:600">Coding&nbsp;Genie</strong>
     <button id="theme-btn">Toggle Theme (Ctrl+J)</button>
+    <button id="help-btn">Help (F1)</button>
   </div>
 
   <!-- Editor + Chat -->
@@ -52,6 +60,21 @@
         <input id="prompt" autocomplete="off" placeholder="Ask the Genie to alter your code…" />
         <button type="submit">Send</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Help Modal -->
+  <div id="help-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="modal-content">
+      <h2 id="help-title">How to use Coding&nbsp;Genie</h2>
+      <ul>
+        <li>Start typing in the editor — pause for a moment and Genie will suggest code in <em>ghost‑text</em>.</li>
+        <li>Press <strong>Tab</strong> to accept a suggestion, or keep typing to dismiss it.</li>
+        <li>Need assistance? Use the chat panel on the right to ask Genie to refactor or explain your code.</li>
+        <li>Toggle dark/light theme anytime with <strong>Ctrl + J</strong> or the <em>Toggle Theme</em> button.</li>
+        <li>Your code and chat stay local in the browser; only the snippets needed for completion are sent to the backend.</li>
+      </ul>
+      <button id="close-help">Got it!</button>
     </div>
   </div>
 
@@ -89,7 +112,7 @@
                     range:new monaco.Range(pos.lineNumber,pos.column,pos.lineNumber,pos.column),
                     command:{id:'acceptInlineSuggestion'}}],
             dispose(){}};
-        },freeInlineCompletions(){} });
+        },freeInlineCompletions(){}});
 
       /* ─── Theme toggle ───────────────────────────────────────── */
       function toggleTheme(){
@@ -97,6 +120,17 @@
         monaco.editor.setTheme(now==='vs-dark'?'vs':'vs-dark');}
       document.getElementById('theme-btn').onclick=toggleTheme;
       editor.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyJ,toggleTheme);
+
+      /* ─── Help modal logic ───────────────────────────────────── */
+      const helpBtn=document.getElementById('help-btn');
+      const modal=document.getElementById('help-modal');
+      const closeBtn=document.getElementById('close-help');
+      function openHelp(){modal.classList.remove('hidden');}
+      function closeHelp(){modal.classList.add('hidden');}
+      helpBtn.onclick=openHelp;
+      closeBtn.onclick=closeHelp;
+      window.addEventListener('keydown',e=>{if(e.key==='Escape')closeHelp();});
+      editor.addCommand(monaco.KeyCode.F1,openHelp);
 
       /* ─── Chat logic (defensive JSON) ───────────────────────── */
       const msgs=document.getElementById('msgs'),
@@ -121,7 +155,7 @@
           if(newCode&&newCode!==editor.getValue()){
             const full=editor.getModel().getFullModelRange();
             editor.executeEdits('chat-edit',[{range:full,text:newCode}]);}
-        }catch(err){wait.remove();add('❌ '+err.message,'bot');console.error(err);}
+        }catch(err){wait.remove();add('❌ '+err.message,'bot');console.error(err);}  
       };
     });
   </script>
