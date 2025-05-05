@@ -38,7 +38,7 @@ def _join_content(content) -> str:
 SYSTEM_PROMPT = """
 You are an advanced *Python* coding‑assistant that returns **only** the next code
 tokens that naturally follow the user‑supplied snippet. DO NOT REPEAT THE CODE
-ALREADY SUPPLIED. You are not allowed to add any comments, explanations, or anything except the code itself.
+ALREADY SUPPLIED. You are not allowed to add any comments, explanations, or anything except the code itself. Do not include any comments like with quotations marks or even #.
 
 ✦ General rules
 • Output raw code *exactly* as it should be inserted—no wrapping in markdown,
@@ -94,7 +94,7 @@ def _sample_completion(prefix: str, temperature: float, max_tokens: int = 16) ->
 
 def ga_best_completion(prefix: str,
                        pop_size: int = 5,
-                       base_temp: float = 0.4,
+                       base_temp: float = 0.2,
                        sigma: float = 0.2) -> str:
     need_space = not prefix.endswith(("\n", " ", "\t"))
 
