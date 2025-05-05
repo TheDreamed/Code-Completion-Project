@@ -2,7 +2,7 @@ import os, random, ast, logging, time
 from flask import Flask, request, jsonify, render_template, make_response
 import anthropic
 from dotenv import load_dotenv
-from anthropic import RateLimitError     # for graceful handling
+from anthropic import RateLimitError     # graceful handling
 
 ###############################################################################
 # Configuration
@@ -14,8 +14,10 @@ if not API_KEY:
 client = anthropic.Anthropic(api_key=API_KEY)
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 
 ###############################################################################
 # Anthropic helpers
@@ -32,12 +34,6 @@ def _join_content(content) -> str:
         return "".join(_block_to_text(b) for b in content)
     return ""
 
-###############################################################################
-# Prompt
-###############################################################################
-###############################################################################
-# Prompt
-###############################################################################
 ###############################################################################
 # Prompt
 ###############################################################################
@@ -59,10 +55,11 @@ ABSOLUTELY NO comments, explanations, or doc‑strings (no \"\"\" or ''' ).
   by the correct indentation (spaces) for that scope.  
 • Preserve Python indentation levels exactly; do not trim leading spaces.
 """
+
 ###############################################################################
-
-_BAD_MARKERS = ("#", '\"\"\"', "'''")  # ← single definition is enough
-
+# Mini‑Genetic‑Algorithm for picking best completion
+###############################################################################
+_BAD_MARKERS = ("#", '\"\"\"', "'''")
 
 def _has_bad_markers(txt: str) -> bool:
     return any(m in txt for m in _BAD_MARKERS)
@@ -94,12 +91,7 @@ def _sample_completion(prefix: str, temperature: float,
             temperature=temperature,
             stop_sequences=[]
         )
-        raw = _join_content(resp.content).rstrip("\n")
-        # Hard‑trim anything after an illegal marker just in case
-        for m in _BAD_MARKERS:
-            if m in raw:
-                raw = raw.split(m, 1)[0].rstrip()
-        return raw
+        return _join_content(resp.content).rstrip("\n")
     except RateLimitError:
         app.logger.warning("Rate‑limited sample — returning empty string")
         time.sleep(0.3)
@@ -111,25 +103,27 @@ def _sample_completion(prefix: str, temperature: float,
 def ga_best_completion(prefix: str,
                        pop_size: int = 5,
                        base_temp: float = 0.2,
-                       sigma: float = 0.2) -> str:
+                       sigma: float = 0.2,
+                       max_attempts: int = 3) -> str:
     need_space = not prefix.endswith(("\n", " ", "\t"))
 
     def legal_temp():
         return min(1.0, max(0.1, random.gauss(base_temp, sigma)))
 
-    population = [_sample_completion(prefix, legal_temp()) for _ in range(pop_size)]
-    population = [c for c in population if c]          # drop blanks
-    if not population:
-        return ""
+    for _ in range(max_attempts):
+        population = [
+            _sample_completion(prefix, legal_temp()) for _ in range(pop_size)
+        ]
+        population = [
+            c for c in population if c and _fitness(c, need_space) > 0
+        ]
+        if population:
+            return max(population, key=lambda c: _fitness(c, need_space))
 
-    ranked = sorted(population,
-                    key=lambda c: _fitness(c, need_space),
-                    reverse=True)
-    best = ranked[0]
-    return best if _fitness(best, need_space) else ""
+    return ""   # nothing valid after retries
 
 ###############################################################################
-# Chat‑level edit helper (unchanged)
+# Chat‑level edit helper
 ###############################################################################
 def apply_edit(code: str, instruction: str) -> tuple[str, str]:
     try:
@@ -178,6 +172,7 @@ def index():
 def autocomplete():
     snippet = request.json.get("snippet", "")
     suggestion = ga_best_completion(snippet)
+    app.logger.info("SUGGESTION: %r", suggestion)
     resp = make_response(jsonify({"suggestion": suggestion}))
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
