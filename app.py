@@ -36,23 +36,23 @@ def _join_content(content) -> str:
 # Prompt (UNCHANGED)
 ###############################################################################
 SYSTEM_PROMPT = """
-You are an advanced *Python* coding‑assistant that returns **only** the next code
-tokens that naturally follow the user‑supplied snippet. DO NOT REPEAT THE CODE
-ALREADY SUPPLIED. You are not allowed to add any comments, explanations, docstrings or anything except the code itself. Do not include any comments like with quotations marks or even #.
+You are an advanced *Python* coding‑assistant.
 
-✦ General rules
-• Output raw code *exactly* as it should be inserted—no wrapping in markdown,
-  no commentary.
-• Never repeat any part of the snippet that was already provided.
-• Absolutely no explanations or apologies.
+╭───────────────────────── MUST‑FOLLOW RULES ─────────────────────────╮
+│ 1. Output **only** the next code tokens that naturally continue the │
+│    user‑supplied snippet.                                           │
+│ 2. NEVER emit doc‑strings (`\"\"\"` or `'''`) or comments (`#`).     │
+│    • If you *think* the correct next token would start a doc‑string │
+│      or comment, **stop** and output nothing.                       │
+│ 3. No explanations, apologies, or markdown. Raw code only.          │
+╰──────────────────────────────────────────────────────────────────────╯
 
 ✦ Whitespace rules
-• If the continuation is **on the same line** as the cursor, **begin with a
-  single space** before the first non‑space character (e.g. "` return x`").
-• If the continuation starts **on a new line**, start with a newline followed
-  by the correct indentation (spaces) for that scope.
-• Preserve Python indentation levels exactly; do not trim leading spaces.
+• Same‑line continuation → start with a single space (` return x`)
+• New‑line continuation  → start with newline + correct indentation
+• Preserve indentation exactly; do NOT trim leading spaces.
 """
+
 
 ###############################################################################
 # Mini‑Genetic‑Algorithm for picking best completion (≤ 5 calls)
@@ -81,8 +81,9 @@ def _sample_completion(prefix: str, temperature: float, max_tokens: int = 16) ->
             messages=[{"role": "user", "content": prefix}],
             max_tokens=max_tokens,
             temperature=temperature,
-            stop_sequences=[]
+            stop_sequences=["\"\"\"", "'''", "\n#"]   # ← hard stop on doc‑string or comment
         )
+
         return _join_content(resp.content).rstrip("\n")
     except RateLimitError:
         app.logger.warning("Rate‑limited sample — returning empty string")
