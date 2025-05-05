@@ -38,11 +38,14 @@ def _join_content(content) -> str:
 ###############################################################################
 # Prompt
 ###############################################################################
+###############################################################################
+# Prompt
+###############################################################################
 SYSTEM_PROMPT = """
 You are an advanced *Python* coding‑assistant that returns **only** the next code
 tokens that naturally follow the user‑supplied snippet.  
 DO NOT REPEAT THE CODE ALREADY SUPPLIED.  
-ABSOLUTELY NO comments, explanations, or doc‑strings (no `"""` or `'''`).  
+ABSOLUTELY NO comments, explanations, or doc‑strings (no \"\"\" or ''' ).  
 
 ✦ General rules  
 • Output raw code *exactly* as it should be inserted—no wrapping in markdown.  
@@ -55,11 +58,11 @@ ABSOLUTELY NO comments, explanations, or doc‑strings (no `"""` or `'''`).
 • If the continuation starts **on a new line**, start with a newline followed
   by the correct indentation (spaces) for that scope.  
 • Preserve Python indentation levels exactly; do not trim leading spaces.
-"""  #  ← this closing triple‑quote must be present
-########################################
-_BAD_MARKERS = ("#", '"""', "'''')
+"""
+###############################################################################
 
-_BAD_MARKERS = ("#", '"""', "'''")
+_BAD_MARKERS = ("#", '\"\"\"', "'''")  # ← single definition is enough
+
 
 def _has_bad_markers(txt: str) -> bool:
     return any(m in txt for m in _BAD_MARKERS)
