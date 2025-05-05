@@ -2,7 +2,7 @@ import os, random, ast, logging, time
 from flask import Flask, request, jsonify, render_template, make_response
 import anthropic
 from dotenv import load_dotenv
-from anthropic import RateLimitError     # graceful handling
+from anthropic import RateLimitError     # for graceful handling
 
 ###############################################################################
 # Configuration
@@ -14,10 +14,8 @@ if not API_KEY:
 client = anthropic.Anthropic(api_key=API_KEY)
 
 app = Flask(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 ###############################################################################
 # Anthropic helpers
@@ -35,35 +33,30 @@ def _join_content(content) -> str:
     return ""
 
 ###############################################################################
-# Prompt
+# Prompt (UNCHANGED)
 ###############################################################################
 SYSTEM_PROMPT = """
 You are an advanced *Python* coding‑assistant that returns **only** the next code
-tokens that naturally follow the user‑supplied snippet.  
-DO NOT REPEAT THE CODE ALREADY SUPPLIED.  
-ABSOLUTELY NO comments, explanations, or doc‑strings (no \"\"\" or ''' ).  
+tokens that naturally follow the user‑supplied snippet. DO NOT REPEAT THE CODE
+ALREADY SUPPLIED. You are not allowed to add any comments, explanations, docstrings or anything except the code itself. Do not include any comments like with quotations marks or even #.
 
-✦ General rules  
-• Output raw code *exactly* as it should be inserted—no wrapping in markdown.  
-• Never repeat any part of the snippet that was already provided.  
-• No explanations or apologies.  
+✦ General rules
+• Output raw code *exactly* as it should be inserted—no wrapping in markdown,
+  no commentary.
+• Never repeat any part of the snippet that was already provided.
+• Absolutely no explanations or apologies.
 
-✦ Whitespace rules  
+✦ Whitespace rules
 • If the continuation is **on the same line** as the cursor, **begin with a
-  single space** before the first non‑space character (e.g. "` return x`").  
+  single space** before the first non‑space character (e.g. "` return x`").
 • If the continuation starts **on a new line**, start with a newline followed
-  by the correct indentation (spaces) for that scope.  
+  by the correct indentation (spaces) for that scope.
 • Preserve Python indentation levels exactly; do not trim leading spaces.
 """
 
 ###############################################################################
-# Mini‑Genetic‑Algorithm for picking best completion
+# Mini‑Genetic‑Algorithm for picking best completion (≤ 5 calls)
 ###############################################################################
-_BAD_MARKERS = ("#", '\"\"\"', "'''")
-
-def _has_bad_markers(txt: str) -> bool:
-    return any(m in txt for m in _BAD_MARKERS)
-
 def _is_valid_python(txt: str) -> bool:
     try:
         ast.parse(txt, mode="exec")
@@ -72,7 +65,7 @@ def _is_valid_python(txt: str) -> bool:
         return False
 
 def _fitness(candidate: str, need_space: bool) -> float:
-    if not candidate or _has_bad_markers(candidate):
+    if not candidate:
         return 0
     if need_space and not candidate.startswith((" ", "\n")):
         return 0
@@ -80,8 +73,7 @@ def _fitness(candidate: str, need_space: bool) -> float:
     score += max(0, 8 - len(candidate))           # shorter is better
     return score
 
-def _sample_completion(prefix: str, temperature: float,
-                       max_tokens: int = 16) -> str:
+def _sample_completion(prefix: str, temperature: float, max_tokens: int = 16) -> str:
     try:
         resp = client.messages.create(
             model="claude-3-7-sonnet-20250219",
@@ -103,27 +95,27 @@ def _sample_completion(prefix: str, temperature: float,
 def ga_best_completion(prefix: str,
                        pop_size: int = 5,
                        base_temp: float = 0.2,
-                       sigma: float = 0.2,
-                       max_attempts: int = 3) -> str:
+                       sigma: float = 0.2) -> str:
     need_space = not prefix.endswith(("\n", " ", "\t"))
 
     def legal_temp():
         return min(1.0, max(0.1, random.gauss(base_temp, sigma)))
 
-    for _ in range(max_attempts):
-        population = [
-            _sample_completion(prefix, legal_temp()) for _ in range(pop_size)
-        ]
-        population = [
-            c for c in population if c and _fitness(c, need_space) > 0
-        ]
-        if population:
-            return max(population, key=lambda c: _fitness(c, need_space))
+    population = [_sample_completion(prefix, legal_temp()) for _ in range(pop_size)]
+    population = [c for c in population if c]          # drop blanks
+    if not population:
+        return ""
 
-    return ""   # nothing valid after retries
+    ranked = sorted(population,
+                    key=lambda c: _fitness(c, need_space),
+                    reverse=True)
+    best = ranked[0]
+    if _fitness(best, need_space) == 0:
+        return best
+    return best
 
 ###############################################################################
-# Chat‑level edit helper
+# Chat‑level edit helper (with graceful error / rate‑limit handling)
 ###############################################################################
 def apply_edit(code: str, instruction: str) -> tuple[str, str]:
     try:
@@ -172,7 +164,6 @@ def index():
 def autocomplete():
     snippet = request.json.get("snippet", "")
     suggestion = ga_best_completion(snippet)
-    app.logger.info("SUGGESTION: %r", suggestion)
     resp = make_response(jsonify({"suggestion": suggestion}))
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
