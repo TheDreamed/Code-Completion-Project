@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify, render_template, make_response
 import anthropic
 from dotenv import load_dotenv
 from anthropic import RateLimitError     # for graceful handling
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 ###############################################################################
 # Configuration
 ###############################################################################
