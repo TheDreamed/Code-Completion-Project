@@ -102,8 +102,17 @@ def ga_best_completion(prefix: str,
     def legal_temp():
         return min(1.0, max(0.1, random.gauss(base_temp, sigma)))
 
-    population = [_sample_completion(prefix, legal_temp()) for _ in range(pop_size)]
-    population = [c for c in population if c]          # drop blanks
+    # ---------- PARALLEL SAMPLING ----------
+    with ThreadPoolExecutor(max_workers=pop_size) as pool:
+        futures = [
+            pool.submit(_sample_completion, prefix, legal_temp())
+            for _ in range(pop_size)
+        ]
+        # gather results as they complete (no ordering requirement)
+        population = [f.result() for f in as_completed(futures)]
+    # ---------------------------------------
+
+    population = [c for c in population if c]   # drop blanks
     if not population:
         return ""
 
