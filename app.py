@@ -35,6 +35,9 @@ def _join_content(content) -> str:
 ###############################################################################
 # Prompt
 ###############################################################################
+###############################################################################
+# Prompt
+###############################################################################
 SYSTEM_PROMPT = """
 You are an advanced *Python* coding‑assistant that returns **only** the next code
 tokens that naturally follow the user‑supplied snippet.  
@@ -52,11 +55,10 @@ ABSOLUTELY NO comments, explanations, or doc‑strings (no `"""` or `'''`).
 • If the continuation starts **on a new line**, start with a newline followed
   by the correct indentation (spaces) for that scope.  
 • Preserve Python indentation levels exactly; do not trim leading spaces.
-"""
+"""  #  ← this closing triple‑quote must be present
+########################################
+_BAD_MARKERS = ("#", '"""', "'''')
 
-###############################################################################
-# Mini‑Genetic‑Algorithm for picking best completion (≤ 5 calls)
-###############################################################################
 _BAD_MARKERS = ("#", '"""', "'''")
 
 def _has_bad_markers(txt: str) -> bool:
