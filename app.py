@@ -36,7 +36,7 @@ def _join_content(content) -> str:
 # Prompt (UNCHANGED)
 ###############################################################################
 SYSTEM_PROMPT = """
-You are an advanced *Python* coding‑assistant.
+You are an advanced *C++* coding‑assistant.
 
 ╭───────────────────────── MUST‑FOLLOW RULES ─────────────────────────╮
 │ 1. Output **only** the next code tokens that naturally continue the │
